@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ORO Indexer — Catch-up Runner</title>
+<style>
+  :root {
+    --bg: #0b0d12; --card: #12151c; --border: #22262f;
+    --text: #e8eaed; --muted: #8b909c; --accent2: #9f7aea;
+    --good: #34d399; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; padding: 40px 16px;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 20px; text-align: center; margin-bottom: 4px; }
+  p.sub { text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+
+  .bar-track {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; height: 14px; overflow: hidden; margin-bottom: 10px;
+  }
+  .bar-fill {
+    background: linear-gradient(90deg, var(--accent2), #d6bcfa);
+    height: 100%; width: 0%; transition: width 0.4s ease;
+  }
+  .pct { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 24px; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+  .stat .value { font-size: 15px; font-weight: 600; word-break: break-all; }
+
+  .log {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; font-size: 12px; font-family: ui-monospace, monospace;
+    color: var(--muted); max-height: 200px; overflow-y: auto; line-height: 1.7;
+  }
+  .log .ok { color: var(--good); }
+  .log .err { color: var(--bad); }
+
+  input[type="text"] {
+    width: 100%; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 12px; border-radius: 8px; font-size: 13px;
+    margin-bottom: 12px; outline: none;
+  }
+  button {
+    width: 100%; background: #6b46c1; color: white; border: none;
+    padding: 13px; border-radius: 10px; font-size: 15px; font-weight: 600;
+    cursor: pointer; margin-bottom: 20px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:hover:not(:disabled) { background: #7c3aed; }
+
+  .done-banner {
+    display: none; text-align: center; background: rgba(52,211,153,0.12);
+    border: 1px solid var(--good); color: var(--good); border-radius: 10px;
+    padding: 14px; font-weight: 600; margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ORO Indexer Catch-up</h1>
+  <p class="sub">Leave this tab open — it calls the indexer repeatedly until it's fully caught up</p>
+
+  <input type="text" id="siteUrl" placeholder="Your site URL, e.g. https://yoursite.vercel.app" />
+  <input type="text" id="secret" placeholder="Cron secret" />
+  <button id="startBtn">Start Catching Up</button>
+
+  <div class="done-banner" id="doneBanner">&#10003; Fully caught up with the chain</div>
+
+  <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+  <div class="pct" id="pctText">0%</div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">Blocks scanned</div><div class="value" id="scannedVal">—</div></div>
+    <div class="stat"><div class="label">Chain tip</div><div class="value" id="tipVal">—</div></div>
+    <div class="stat"><div class="label">Runs completed</div><div class="value" id="runsVal">0</div></div>
+    <div class="stat"><div class="label">Addresses found</div><div class="value" id="addrVal">0</div></div>
+  </div>
+
+  <div class="log" id="logBox"></div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let running = false;
+  let runCount = 0;
+  let totalAddresses = 0;
+
+  function log(msg, cls) {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    $('logBox').prepend(line);
+  }
+
+  function updateProgress(scannedTo, latestBlock) {
+    const pct = Math.min(100, (scannedTo / latestBlock) * 100);
+    $('barFill').style.width = pct.toFixed(2) + '%';
+    $('pctText').textContent = pct.toFixed(2) + '%';
+    $('scannedVal').textContent = scannedTo.toLocaleString();
+    $('tipVal').textContent = latestBlock.toLocaleString();
+  }
+
+  async function runLoop() {
+    const baseUrl = $('siteUrl').value.trim().replace(/\/$/, '');
+    const secret = $('secret').value.trim();
+    if (!baseUrl || !secret) {
+      log('Enter both the site URL and secret first.', 'err');
+      return;
+    }
+
+    running = true;
+    $('startBtn').disabled = true;
+    $('startBtn').textContent = 'Running...';
+
+    while (running) {
+      try {
+        const res = await fetch(`${baseUrl}/api/refresh-leaderboard?secret=${encodeURIComponent(secret)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          log(`Error: ${data.error || res.status}`, 'err');
+          break;
+        }
+
+        if (data.status === 'already up to date') {
+          log('Already fully caught up.', 'ok');
+          $('doneBanner').style.display = 'block';
+          break;
+        }
+
+        runCount++;
+        totalAddresses += data.addressesTouched || 0;
+        $('runsVal').textContent = runCount;
+        $('addrVal').textContent = totalAddresses;
+        updateProgress(data.scannedTo, data.latestBlock);
+        log(`Run ${runCount}: scanned to ${data.scannedTo.toLocaleString()} (+${data.addressesTouched} addresses)`, 'ok');
+
+        if (data.caughtUp) {
+          log('Fully caught up with the chain.', 'ok');
+          $('doneBanner').style.display = 'block';
+          break;
+        }
+      } catch (err) {
+        log('Request failed: ' + err.message, 'err');
+        break;
+      }
+    }
+
+    running = false;
+    $('startBtn').disabled = false;
+    $('startBtn').textContent = 'Start Catching Up';
+  }
+
+  $('startBtn').addEventListener('click', runLoop);
+</script>
+</body>
+</html>
