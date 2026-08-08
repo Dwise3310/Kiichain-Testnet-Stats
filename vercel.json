@@ -1,13 +1,7 @@
 {
-  "crons": [
-    {
-      "path": "/api/refresh-leaderboard",
-      "schedule": "0 0 * * *"
-    }
-  ],
   "functions": {
-    "api/refresh-leaderboard.js": {
-      "maxDuration": 60
+    "api/add-to-leaderboard.js": {
+      "maxDuration": 15
     }
   }
 }
