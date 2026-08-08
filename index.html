@@ -160,6 +160,60 @@
   footer a { color: var(--accent2); text-decoration: none; }
   a { color: var(--accent2); }
 
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 26px;
+    width: 100%;
+    max-width: 460px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .modal-title {
+    font-size: 17px;
+    margin: 0 0 10px;
+    padding-right: 24px;
+  }
+  .modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  .modal-close:hover { color: var(--text); }
+  #bulkAddrs {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-family: ui-monospace, monospace;
+    outline: none;
+    resize: vertical;
+  }
+
   .builder-credit {
     margin-top: 40px;
     padding-top: 24px;
@@ -213,12 +267,6 @@
     <input type="text" id="searchAddr" placeholder="0x... wallet address" />
     <button class="small-btn" id="searchBtn">Search</button>
   </div>
-
-  <div class="section-title">Bulk Add to Leaderboard</div>
-  <div class="hint">Paste a chunk of wallet addresses (one per line, or comma/space separated) — each one gets checked and added to the leaderboard automatically. Up to 200 at a time.</div>
-  <textarea id="bulkAddrs" placeholder="0xabc...&#10;0xdef...&#10;0x123..." rows="5" style="width:100%; background:var(--card); border:1px solid var(--border); color:var(--text); padding:10px 12px; border-radius:10px; font-size:13px; font-family:ui-monospace,monospace; outline:none; resize:vertical; margin-bottom:8px;"></textarea>
-  <button class="small-btn" id="bulkAddBtn" style="width:100%; margin-bottom:20px;">Add All to Leaderboard</button>
-  <div id="bulkStatus" class="hint" style="margin-top:-4px;"></div>
 
   <div id="app" style="display:none;">
     <div class="addr-pill" id="activeAddrPill" style="margin: 6px 0 20px;">
@@ -281,6 +329,8 @@
     Reads live from KiiChain Testnet Oro public RPC endpoints. Nothing is stored — every value is fetched fresh from your browser.<br/>
     RPC: json-rpc.uno.sentry.testnet.v3.kiivalidator.com &middot; LCD: lcd.uno.sentry.testnet.v3.kiivalidator.com<br/>
     <a href="./leaderboard.html">View ORO Leaderboard &rarr;</a>
+    &middot;
+    <a href="#" id="openBulkModal">Bulk add to leaderboard</a>
 
     <div class="builder-credit">
       <div class="label">Built by Advancer</div>
@@ -300,6 +350,17 @@
       </div>
     </div>
   </footer>
+</div>
+
+<div id="modalOverlay" class="modal-overlay">
+  <div class="modal-box">
+    <button id="modalClose" class="modal-close">&times;</button>
+    <h2 class="modal-title">Bulk Add to Leaderboard</h2>
+    <p class="hint" style="margin-top:0;">Paste a chunk of wallet addresses (one per line, or comma/space separated) — each one gets checked and added to the leaderboard automatically. Up to 200 at a time.</p>
+    <textarea id="bulkAddrs" placeholder="0xabc...&#10;0xdef...&#10;0x123..." rows="6"></textarea>
+    <button class="small-btn" id="bulkAddBtn" style="width:100%; margin-top:12px;">Add to Leaderboard</button>
+    <div id="bulkStatus" class="hint" style="margin-top:10px;"></div>
+  </div>
 </div>
 
 <script>
@@ -461,6 +522,26 @@ $('searchAddr').addEventListener('keydown', (e) => { if (e.key === 'Enter') sear
 $('tokenBtn').addEventListener('click', checkTokenBalance);
 $('stakeBtn').addEventListener('click', checkStaked);
 $('bulkAddBtn').addEventListener('click', bulkAddToLeaderboard);
+
+// Modal open/close wiring
+const modalOverlay = $('modalOverlay');
+
+function openBulkModal(e) {
+  e.preventDefault();
+  modalOverlay.classList.add('open');
+}
+function closeBulkModal() {
+  modalOverlay.classList.remove('open');
+}
+
+$('openBulkModal').addEventListener('click', openBulkModal);
+$('modalClose').addEventListener('click', closeBulkModal);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeBulkModal(); // only closes on backdrop click, not the box itself
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('open')) closeBulkModal();
+});
 
 async function bulkAddToLeaderboard() {
   const raw = $('bulkAddrs').value.trim();
